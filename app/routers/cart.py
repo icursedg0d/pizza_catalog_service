@@ -133,3 +133,62 @@ async def delete_product_from_cart(
     await db.commit()
 
     return {"status_code": status.HTTP_200_OK, "message": "Product removed from cart"}
+
+
+@router.post("/checkout")
+async def checkout_cart(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    get_user: Annotated[dict, Depends(get_current_user)],
+):
+
+    cart_items = await db.scalars(
+        select(Cart).where(Cart.user_id == get_user.get("user_id"))
+    )
+
+    if not cart_items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cart is empty"
+        )
+
+    # Формируем данные о корзине
+    cart_summary = []
+    total_price = 0
+    for item in cart_items:
+        product = await db.scalar(select(Product).where(Product.id == item.product_id))
+        if not product:
+            continue
+        item_data = {
+            "product_id": item.product_id,
+            "product_name": product.name,
+            "product_price": product.price,
+            "radius": item.radius,
+            "quantity": item.quantity,
+            "total_price": product.price * item.quantity,
+            "image_url": product.image_url,
+        }
+        total_price += item_data["total_price"]
+        cart_summary.append(item_data)
+
+    # Отправка письма с содержимым корзины
+    email_subject = "Ваш заказ успешно оформлен"
+    email_body = (
+        f"Здравствуйте, {get_user.get('first_name')}!\n\n"
+        "Ваш заказ был успешно оформлен. Подробности:\n\n"
+        + "\n".join(
+            [
+                f"{item['quantity']}x {item['product_name']
+                                       } ({item['radius']} см) - {item['total_price']} руб."
+                for item in cart_summary
+            ]
+        )
+        + f"\n\nОбщая сумма: {total_price} руб.\n\nСпасибо за заказ!"
+    )
+    # await send_email(to=EmailStr(user_email), subject=email_subject, body=email_body)
+
+    # Удаляем товары из корзины
+    for item in cart_items:
+        await db.delete(item)
+    await db.commit()
+
+    return {"status_code": status.HTTP_200_OK, "message": "Order placed successfully", "email_subject": email_subject, "email_body": email_body}
