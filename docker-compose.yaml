@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  web:
+    build:
+      context: .
+    container_name: pizza_catalog_service
+    ports:
+      - "8002:8002"
