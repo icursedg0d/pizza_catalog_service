@@ -170,7 +170,7 @@ async def checkout_cart(
         total_price += item_data["total_price"]
         cart_summary.append(item_data)
 
-    # Отправка письма с содержимым корзины (оставим комментарий для реальной отправки email)
+    # Формируем тело письма
     email_subject = "Ваш заказ успешно оформлен"
     email_body = (
         f"Здравствуйте, {get_user.get('first_name')}!\n\n"
@@ -184,27 +184,71 @@ async def checkout_cart(
         )
         + f"\n\nОбщая сумма: {total_price} руб.\n\nСпасибо за заказ!"
     )
+
+    # Комментарий для реальной отправки email
     # await send_email(to=EmailStr(user_email), subject=email_subject, body=email_body)
 
     # Удаляем товары из корзины по их ID
     try:
-        # Составляем список ID всех товаров
         cart_ids = [item.id for item in cart_items]
         if cart_ids:
-            await db.execute(
-                f"DELETE FROM cart WHERE id IN :ids", {"ids": tuple(cart_ids)}
-            )
+            # Используем ORM для удаления элементов
+            await db.execute(delete(Cart).where(Cart.id.in_(cart_ids)))
+            await db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="No items in the cart")
+    except Exception as e:
+        # Логируем и выводим ошибку
+        print("Error while deleting items from the cart:", e)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete items from cart: {str(e)}"
+        )
+
+    # Возвращаем успешный ответ
+    return {
+        "status_code": status.HTTP_200_OK,
+        "message": "Order placed successfully",
+        "email_subject": email_subject,
+        "email_body": email_body
+    }
+
+
+@router.delete("/clear")
+async def clear_cart(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    get_user: Annotated[dict, Depends(get_current_user)],
+):
+    user_id = get_user.get("user_id")  # Получаем ID текущего пользователя
+
+    # Ищем товары в корзине этого пользователя
+    cart_items = await db.scalars(
+        select(Cart).where(Cart.user_id == user_id)
+    )
+
+    if not cart_items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cart is empty"
+        )
+
+    # Удаляем товары из корзины
+    try:
+        # Составляем список ID товаров для удаления
+        cart_ids = [item.id for item in cart_items]
+        if cart_ids:
+            # Удаляем все товары корзины по их ID
+            await db.execute(delete(Cart).where(Cart.id.in_(cart_ids)))
             await db.commit()
         else:
             raise HTTPException(status_code=404, detail="No items in the cart")
     except Exception as e:
         print("Error while deleting items from the cart:", e)
         raise HTTPException(
-            status_code=500, detail="Failed to delete items from cart")
+            status_code=500, detail=f"Failed to delete items from cart: {str(e)}"
+        )
 
+    # Возвращаем успешный ответ
     return {
         "status_code": status.HTTP_200_OK,
-        "message": "Order placed successfully",
-        "email_subject": email_subject,
-        "email_body": email_body
+        "message": "Cart cleared successfully"
     }
