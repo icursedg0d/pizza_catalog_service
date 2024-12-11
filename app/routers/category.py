@@ -44,28 +44,37 @@ async def create_category(
         )
 
 
-@router.put("/update_category")
+@router.put("/update_category/{category_id}")
 async def update_category(
-    db: Annotated[AsyncSession, Depends(get_db)],
     category_id: int,
     update_category: CreateCategory,
+    db: Annotated[AsyncSession, Depends(get_db)],
     get_user: Annotated[dict, Depends(get_current_user)],
 ):
     if get_user.get("is_admin"):
+        # Retrieve the existing category
         category = await db.scalar(select(Category).where(Category.id == category_id))
         if category is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="There is no category found",
+                detail="Category not found",
             )
 
+        # Ensure that the parent_id is valid if provided
+        if update_category.parent_id and not await db.get(Category, update_category.parent_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid parent category ID",
+            )
+
+        # Update the category
         await db.execute(
             update(Category)
             .where(Category.id == category_id)
             .values(
                 name=update_category.name,
                 slug=slugify(update_category.name),
-                parent_id=update_category.parent_id,
+                parent_id=update_category.parent_id if update_category.parent_id else None,
             )
         )
 
@@ -77,7 +86,7 @@ async def update_category(
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="You must be admin user for this",
+            detail="You must be an admin user for this",
         )
 
 
