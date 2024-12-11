@@ -140,7 +140,7 @@ async def checkout_cart(
     db: Annotated[AsyncSession, Depends(get_db)],
     get_user: Annotated[dict, Depends(get_current_user)],
 ):
-
+    # Получаем все товары из корзины текущего пользователя
     cart_items = await db.scalars(
         select(Cart).where(Cart.user_id == get_user.get("user_id"))
     )
@@ -151,7 +151,7 @@ async def checkout_cart(
             detail="Cart is empty"
         )
 
-    # Формируем данные о корзине
+    # Формируем данные о корзине и рассчитываем общую сумму
     cart_summary = []
     total_price = 0
     for item in cart_items:
@@ -170,7 +170,7 @@ async def checkout_cart(
         total_price += item_data["total_price"]
         cart_summary.append(item_data)
 
-    # Отправка письма с содержимым корзины
+    # Отправка письма с содержимым корзины (оставим комментарий для реальной отправки email)
     email_subject = "Ваш заказ успешно оформлен"
     email_body = (
         f"Здравствуйте, {get_user.get('first_name')}!\n\n"
@@ -186,9 +186,25 @@ async def checkout_cart(
     )
     # await send_email(to=EmailStr(user_email), subject=email_subject, body=email_body)
 
-    # Удаляем товары из корзины
-    for item in cart_items:
-        await db.delete(item)
-    await db.commit()
+    # Удаляем товары из корзины по их ID
+    try:
+        # Составляем список ID всех товаров
+        cart_ids = [item.id for item in cart_items]
+        if cart_ids:
+            await db.execute(
+                f"DELETE FROM cart WHERE id IN :ids", {"ids": tuple(cart_ids)}
+            )
+            await db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="No items in the cart")
+    except Exception as e:
+        print("Error while deleting items from the cart:", e)
+        raise HTTPException(
+            status_code=500, detail="Failed to delete items from cart")
 
-    return {"status_code": status.HTTP_200_OK, "message": "Order placed successfully", "email_subject": email_subject, "email_body": email_body}
+    return {
+        "status_code": status.HTTP_200_OK,
+        "message": "Order placed successfully",
+        "email_subject": email_subject,
+        "email_body": email_body
+    }
