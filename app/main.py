@@ -1,8 +1,24 @@
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
 from app.routers import category, products, cart
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://pizza-auth-service.onrender.com",
+    "https://pizza-catalog-service.onrender.com"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
