@@ -25,10 +25,13 @@ async def create_category(
     get_user: Annotated[dict, Depends(get_current_user)],
 ):
     if get_user.get("is_admin"):
+        # Убедитесь, что parent_id равен None, если нет родительской категории
+        parent_id = create_category.parent_id if create_category.parent_id and await db.get(Category, create_category.parent_id) else None
+
         await db.execute(
             insert(Category).values(
                 name=create_category.name,
-                parent_id=create_category.parent_id,
+                parent_id=parent_id,
                 slug=slugify(create_category.name),
             )
         )
